@@ -1,0 +1,6 @@
+@E_Commerse.AI.API_HostAddress = http://localhost:5196
+
+GET {{E_Commerse.AI.API_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###
