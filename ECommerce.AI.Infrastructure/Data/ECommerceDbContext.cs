@@ -1,4 +1,5 @@
 using ECommerce.AI.Domain.Entities;
+using ECommerce.AI.Domain.ValueObjects;
 using Microsoft.EntityFrameworkCore;
 
 namespace ECommerce.AI.Infrastructure.Data;
@@ -43,13 +44,37 @@ public class ECommerceDbContext : DbContext
             entity.HasKey(p => p.Id);
             entity.Property(p => p.Name).IsRequired().HasMaxLength(300);
             entity.Property(p => p.Description).IsRequired().HasMaxLength(2000);
-            entity.Property(p => p.SKU).IsRequired().HasMaxLength(50);
-            entity.Property(p => p.Price).HasColumnType("decimal(18,2)");
-            entity.Property(p => p.ComparePrice).HasColumnType("decimal(18,2)");
+
+            // Value objects: EF Core can't map these directly, so each gets an explicit
+            // conversion to/from the scalar column type it's persisted as.
+            entity.Property(p => p.SKU)
+                  .HasField("_sku") // EF's convention lowercases only the first letter ("sKU"), which doesn't match "_sku"
+                  .HasConversion(sku => sku.Value, value => new ProductSKU(value))
+                  .IsRequired()
+                  .HasMaxLength(50);
+
+            entity.Property(p => p.Price)
+                  .HasConversion(price => price.Amount, amount => new Money(amount, "USD"))
+                  .HasColumnType("decimal(18,2)");
+
+            entity.Property(p => p.ComparePrice)
+                  .HasConversion(
+                      price => price == null ? (decimal?)null : price.Amount,
+                      amount => amount == null ? null : new Money(amount.Value, "USD"))
+                  .HasColumnType("decimal(18,2)");
+
+            entity.Property(p => p.Weight)
+                  .HasConversion(weight => weight.Value, value => new ProductWeight(value, "kg"));
+
+            entity.Property(p => p.Dimensions)
+                  .HasConversion(
+                      dimensions => dimensions == null ? null : dimensions.ToString(),
+                      value => value == null ? null : ProductDimensions.FromString(value, "cm"))
+                  .HasMaxLength(100);
+
             entity.Property(p => p.Brand).HasMaxLength(100);
             entity.Property(p => p.Model).HasMaxLength(100);
-            entity.Property(p => p.Dimensions).HasMaxLength(100);
-            
+
             entity.HasIndex(p => p.SKU).IsUnique();
             entity.HasIndex(p => p.Name);
             entity.HasIndex(p => new { p.CategoryId, p.IsActive });
@@ -68,7 +93,17 @@ public class ECommerceDbContext : DbContext
         modelBuilder.Entity<ProductImage>(entity =>
         {
             entity.HasKey(pi => pi.Id);
-            entity.Property(pi => pi.ImageUrl).IsRequired().HasMaxLength(500);
+
+            // The public ImageUrl property unwraps its backing field to a plain string, so EF
+            // can't map it directly (type mismatch with the field). Map the field itself as a
+            // field-only property instead, and exclude the computed public property.
+            entity.Ignore(pi => pi.ImageUrl);
+            entity.Property<ImageUrl>("_imageUrl")
+                  .HasColumnName("ImageUrl")
+                  .HasConversion(url => url.Value, value => new ImageUrl(value))
+                  .IsRequired()
+                  .HasMaxLength(500);
+
             entity.Property(pi => pi.AltText).HasMaxLength(200);
             
             entity.HasIndex(pi => new { pi.ProductId, pi.SortOrder });
@@ -87,8 +122,24 @@ public class ECommerceDbContext : DbContext
         modelBuilder.Entity<ProductSpecification>(entity =>
         {
             entity.HasKey(ps => ps.Id);
-            entity.Property(ps => ps.Name).IsRequired().HasMaxLength(100);
-            entity.Property(ps => ps.Value).IsRequired().HasMaxLength(500);
+
+            // Name/Value unwrap their backing value-object fields to plain strings, so EF can't
+            // map them directly (type mismatch with the field). Map the fields themselves as
+            // field-only properties instead, and exclude the computed public properties.
+            entity.Ignore(ps => ps.Name);
+            entity.Ignore(ps => ps.Value);
+
+            entity.Property<SpecificationName>("_name")
+                  .HasColumnName("Name")
+                  .HasConversion(name => name.Value, value => new SpecificationName(value))
+                  .IsRequired()
+                  .HasMaxLength(100);
+
+            entity.Property<SpecificationValue>("_value")
+                  .HasColumnName("Value")
+                  .HasConversion(val => val.Value, value => new SpecificationValue(value))
+                  .IsRequired()
+                  .HasMaxLength(500);
             
             entity.HasIndex(ps => new { ps.ProductId, ps.SortOrder });
 

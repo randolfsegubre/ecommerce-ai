@@ -1,6 +1,8 @@
+using MediatR;
 using Microsoft.AspNetCore.Mvc;
 using ECommerce.AI.Application.DTOs;
 using ECommerce.AI.Application.DTOs.Commands;
+using ECommerce.AI.Application.Handlers.Categories;
 
 namespace ECommerce.AI.API.Controllers;
 
@@ -13,10 +15,12 @@ namespace ECommerce.AI.API.Controllers;
 [Tags("Categories")]
 public class CategoriesController : ControllerBase
 {
+    private readonly IMediator _mediator;
     private readonly ILogger<CategoriesController> _logger;
 
-    public CategoriesController(ILogger<CategoriesController> logger)
+    public CategoriesController(IMediator mediator, ILogger<CategoriesController> logger)
     {
+        _mediator = mediator;
         _logger = logger;
     }
 
@@ -29,34 +33,8 @@ public class CategoriesController : ControllerBase
     [ProducesResponseType(typeof(IEnumerable<CategoryDto>), StatusCodes.Status200OK)]
     public async Task<ActionResult<IEnumerable<CategoryDto>>> GetCategories()
     {
-        // TODO: Implement with MediatR handler
-        var sampleCategories = new List<CategoryDto>
-        {
-            new CategoryDto
-            {
-                Id = Guid.NewGuid(),
-                Name = "Electronics",
-                Description = "Electronic devices and accessories",
-                IsActive = true,
-                ParentCategoryId = null,
-                SubCategories = new List<CategoryDto>(),
-                Products = new List<ProductDto>(),
-                CreatedAt = DateTime.UtcNow
-            },
-            new CategoryDto
-            {
-                Id = Guid.NewGuid(),
-                Name = "Clothing",
-                Description = "Clothing and apparel",
-                IsActive = true,
-                ParentCategoryId = null,
-                SubCategories = new List<CategoryDto>(),
-                Products = new List<ProductDto>(),
-                CreatedAt = DateTime.UtcNow
-            }
-        };
-
-        return Ok(sampleCategories);
+        var categories = await _mediator.Send(new GetAllCategoriesQuery());
+        return Ok(categories);
     }
 
     /// <summary>
@@ -71,23 +49,8 @@ public class CategoriesController : ControllerBase
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     public async Task<ActionResult<CategoryDto>> GetCategory(Guid id)
     {
-        // TODO: Implement with MediatR handler
-        if (id == Guid.Empty)
-            return NotFound();
-
-        var category = new CategoryDto
-        {
-            Id = id,
-            Name = "Electronics",
-            Description = "Electronic devices and accessories",
-            IsActive = true,
-            ParentCategoryId = null,
-            SubCategories = new List<CategoryDto>(),
-            Products = new List<ProductDto>(),
-            CreatedAt = DateTime.UtcNow
-        };
-
-        return Ok(category);
+        var category = await _mediator.Send(new GetCategoryByIdQuery(id));
+        return category is null ? NotFound() : Ok(category);
     }
 
     /// <summary>
@@ -102,23 +65,7 @@ public class CategoriesController : ControllerBase
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
     public async Task<ActionResult<CategoryDto>> CreateCategory([FromBody] CreateCategoryCommand command)
     {
-        if (!ModelState.IsValid)
-            return BadRequest(ModelState);
-
-        // TODO: Implement with MediatR handler
-        var createdCategory = new CategoryDto
-        {
-            Id = Guid.NewGuid(),
-            Name = command.Name,
-            Description = command.Description,
-            ImageUrl = command.ImageUrl,
-            IsActive = true,
-            ParentCategoryId = command.ParentCategoryId,
-            SubCategories = new List<CategoryDto>(),
-            Products = new List<ProductDto>(),
-            CreatedAt = DateTime.UtcNow
-        };
-
+        var createdCategory = await _mediator.Send(new CreateCategoryRequest(command));
         return CreatedAtAction(nameof(GetCategory), new { id = createdCategory.Id }, createdCategory);
     }
 
@@ -137,27 +84,10 @@ public class CategoriesController : ControllerBase
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
     public async Task<ActionResult<CategoryDto>> UpdateCategory(Guid id, [FromBody] UpdateCategoryCommand command)
     {
-        if (!ModelState.IsValid)
-            return BadRequest(ModelState);
+        if (id != command.Id)
+            return BadRequest("Route ID and command ID must match.");
 
-        if (id == Guid.Empty)
-            return NotFound();
-
-        // TODO: Implement with MediatR handler
-        var updatedCategory = new CategoryDto
-        {
-            Id = id,
-            Name = command.Name,
-            Description = command.Description,
-            ImageUrl = command.ImageUrl,
-            IsActive = command.IsActive,
-            ParentCategoryId = command.ParentCategoryId,
-            SubCategories = new List<CategoryDto>(),
-            Products = new List<ProductDto>(),
-            CreatedAt = DateTime.UtcNow.AddDays(-30),
-            UpdatedAt = DateTime.UtcNow
-        };
-
+        var updatedCategory = await _mediator.Send(new UpdateCategoryRequest(command));
         return Ok(updatedCategory);
     }
 
@@ -175,12 +105,8 @@ public class CategoriesController : ControllerBase
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
     public async Task<ActionResult> DeleteCategory(Guid id)
     {
-        if (id == Guid.Empty)
-            return NotFound();
-
-        // TODO: Implement with MediatR handler
-        // Check if category has subcategories or products before deletion
-        return NoContent();
+        var deleted = await _mediator.Send(new DeleteCategoryRequest(id));
+        return deleted ? NoContent() : NotFound();
     }
 
     /// <summary>
@@ -192,89 +118,23 @@ public class CategoriesController : ControllerBase
     [ProducesResponseType(typeof(IEnumerable<CategoryDto>), StatusCodes.Status200OK)]
     public async Task<ActionResult<IEnumerable<CategoryDto>>> GetRootCategories()
     {
-        // TODO: Implement with MediatR handler
-        var categories = new List<CategoryDto>();
+        var categories = await _mediator.Send(new GetRootCategoriesQuery());
         return Ok(categories);
     }
 
     /// <summary>
-    /// Get subcategories of a category
-    /// </summary>
-    /// <param name="id">Parent category ID</param>
-    /// <returns>List of subcategories</returns>
-    /// <response code="200">Returns the list of subcategories</response>
-    /// <response code="404">Category not found</response>
-    [HttpGet("{id:guid}/subcategories")]
-    [ProducesResponseType(typeof(IEnumerable<CategoryDto>), StatusCodes.Status200OK)]
-    [ProducesResponseType(StatusCodes.Status404NotFound)]
-    public async Task<ActionResult<IEnumerable<CategoryDto>>> GetSubcategories(Guid id)
-    {
-        if (id == Guid.Empty)
-            return NotFound();
-
-        // TODO: Implement with MediatR handler
-        var subcategories = new List<CategoryDto>();
-        return Ok(subcategories);
-    }
-
-    /// <summary>
-    /// Get category hierarchy (category with all ancestors and descendants)
+    /// Get a category together with its products
     /// </summary>
     /// <param name="id">Category ID</param>
-    /// <returns>Category hierarchy</returns>
-    /// <response code="200">Returns the category hierarchy</response>
+    /// <returns>Category with its products loaded</returns>
+    /// <response code="200">Returns the category with products</response>
     /// <response code="404">Category not found</response>
-    [HttpGet("{id:guid}/hierarchy")]
+    [HttpGet("{id:guid}/products")]
     [ProducesResponseType(typeof(CategoryDto), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
-    public async Task<ActionResult<CategoryDto>> GetCategoryHierarchy(Guid id)
+    public async Task<ActionResult<CategoryDto>> GetCategoryWithProducts(Guid id)
     {
-        if (id == Guid.Empty)
-            return NotFound();
-
-        // TODO: Implement with MediatR handler
-        var categoryHierarchy = new CategoryDto
-        {
-            Id = id,
-            Name = "Sample Category",
-            Description = "Sample category with hierarchy",
-            IsActive = true,
-            SubCategories = new List<CategoryDto>(),
-            Products = new List<ProductDto>(),
-            CreatedAt = DateTime.UtcNow
-        };
-
-        return Ok(categoryHierarchy);
+        var category = await _mediator.Send(new GetCategoryWithProductsQuery(id));
+        return category is null ? NotFound() : Ok(category);
     }
-}
-
-/// <summary>
-/// Update category command for PUT operations
-/// </summary>
-public class UpdateCategoryCommand
-{
-    /// <summary>
-    /// Category name
-    /// </summary>
-    public string Name { get; set; } = string.Empty;
-
-    /// <summary>
-    /// Category description
-    /// </summary>
-    public string Description { get; set; } = string.Empty;
-
-    /// <summary>
-    /// Category image URL
-    /// </summary>
-    public string? ImageUrl { get; set; }
-
-    /// <summary>
-    /// Whether the category is active
-    /// </summary>
-    public bool IsActive { get; set; } = true;
-
-    /// <summary>
-    /// Parent category ID
-    /// </summary>
-    public Guid? ParentCategoryId { get; set; }
 }

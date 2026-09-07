@@ -10,6 +10,8 @@ public record GetAllProductsQuery : IRequest<IEnumerable<ProductDto>>;
 public record GetProductByIdQuery(Guid Id) : IRequest<ProductDto?>;
 public record GetProductBySkuQuery(string Sku) : IRequest<ProductDto?>;
 public record GetFeaturedProductsQuery : IRequest<IEnumerable<ProductDto>>;
+public record GetLowStockProductsQuery : IRequest<IEnumerable<ProductDto>>;
+public record GetProductsByCategoryQuery(Guid CategoryId) : IRequest<IEnumerable<ProductDto>>;
 public record SearchProductsQuery(string SearchTerm) : IRequest<IEnumerable<ProductDto>>;
 
 // Query Handlers
@@ -81,6 +83,42 @@ public class GetFeaturedProductsHandler : IRequestHandler<GetFeaturedProductsQue
     public async Task<IEnumerable<ProductDto>> Handle(GetFeaturedProductsQuery request, CancellationToken cancellationToken)
     {
         var products = await _unitOfWork.Products.GetFeaturedProductsAsync(cancellationToken);
+        return _mapper.Map<IEnumerable<ProductDto>>(products);
+    }
+}
+
+public class GetLowStockProductsHandler : IRequestHandler<GetLowStockProductsQuery, IEnumerable<ProductDto>>
+{
+    private readonly IUnitOfWork _unitOfWork;
+    private readonly IMapper _mapper;
+
+    public GetLowStockProductsHandler(IUnitOfWork unitOfWork, IMapper mapper)
+    {
+        _unitOfWork = unitOfWork;
+        _mapper = mapper;
+    }
+
+    public async Task<IEnumerable<ProductDto>> Handle(GetLowStockProductsQuery request, CancellationToken cancellationToken)
+    {
+        var products = await _unitOfWork.Products.GetLowStockProductsAsync(cancellationToken);
+        return _mapper.Map<IEnumerable<ProductDto>>(products);
+    }
+}
+
+public class GetProductsByCategoryHandler : IRequestHandler<GetProductsByCategoryQuery, IEnumerable<ProductDto>>
+{
+    private readonly IUnitOfWork _unitOfWork;
+    private readonly IMapper _mapper;
+
+    public GetProductsByCategoryHandler(IUnitOfWork unitOfWork, IMapper mapper)
+    {
+        _unitOfWork = unitOfWork;
+        _mapper = mapper;
+    }
+
+    public async Task<IEnumerable<ProductDto>> Handle(GetProductsByCategoryQuery request, CancellationToken cancellationToken)
+    {
+        var products = await _unitOfWork.Products.GetByCategoryAsync(request.CategoryId, cancellationToken);
         return _mapper.Map<IEnumerable<ProductDto>>(products);
     }
 }

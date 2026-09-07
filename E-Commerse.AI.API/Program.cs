@@ -1,4 +1,9 @@
 using System.Reflection;
+using ECommerce.AI.API.Middleware;
+using ECommerce.AI.Application;
+using ECommerce.AI.Infrastructure;
+using ECommerce.AI.Infrastructure.Data;
+using Microsoft.EntityFrameworkCore;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -9,6 +14,10 @@ builder.Logging.AddDebug();
 
 // Add services to the container.
 builder.Services.AddControllers();
+
+// Application (MediatR, AutoMapper, FluentValidation) and Infrastructure (EF Core, repositories)
+builder.Services.AddApplicationServices();
+builder.Services.AddInfrastructureServices(builder.Configuration);
 
 // Configure Swagger/OpenAPI
 builder.Services.AddEndpointsApiExplorer();
@@ -65,12 +74,22 @@ var app = builder.Build();
 // Get logger for startup messages
 var logger = app.Services.GetRequiredService<ILogger<Program>>();
 
+// Apply pending EF Core migrations and seed sample data for local development.
+using (var scope = app.Services.CreateScope())
+{
+    var dbContext = scope.ServiceProvider.GetRequiredService<ECommerceDbContext>();
+    await dbContext.Database.MigrateAsync();
+    await DbInitializer.SeedAsync(dbContext);
+}
+
 // Log startup information
 logger.LogInformation("=== E-Commerce AI API Starting ===");
 logger.LogInformation("Environment: {Environment}", app.Environment.EnvironmentName);
 logger.LogInformation("Content Root: {ContentRoot}", app.Environment.ContentRootPath);
 
 // Configure the HTTP request pipeline.
+app.UseMiddleware<ExceptionHandlingMiddleware>();
+
 if (app.Environment.IsDevelopment())
 {
     logger.LogInformation("Configuring Development environment...");
