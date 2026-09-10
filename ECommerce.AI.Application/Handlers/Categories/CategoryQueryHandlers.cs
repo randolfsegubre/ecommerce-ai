@@ -5,14 +5,15 @@ using MediatR;
 
 namespace ECommerce.AI.Application.Handlers.Categories;
 
-// Queries
+// MediatR requests (the "query" side of CQRS) - pure reads, no side effects,
+// same pattern as ProductQueryHandlers.cs's requests.
 public record GetAllCategoriesQuery : IRequest<IEnumerable<CategoryDto>>;
 public record GetCategoryByIdQuery(Guid Id) : IRequest<CategoryDto?>;
 public record GetRootCategoriesQuery : IRequest<IEnumerable<CategoryDto>>;
 public record GetActiveCategoriesQuery : IRequest<IEnumerable<CategoryDto>>;
 public record GetCategoryWithProductsQuery(Guid Id) : IRequest<CategoryDto?>;
 
-// Query Handlers
+/// <summary>MediatR query handler returning every Category, active or not.</summary>
 public class GetAllCategoriesHandler : IRequestHandler<GetAllCategoriesQuery, IEnumerable<CategoryDto>>
 {
     private readonly IUnitOfWork _unitOfWork;
@@ -31,6 +32,7 @@ public class GetAllCategoriesHandler : IRequestHandler<GetAllCategoriesQuery, IE
     }
 }
 
+/// <summary>MediatR query handler for looking up a single Category by its database Id.</summary>
 public class GetCategoryByIdHandler : IRequestHandler<GetCategoryByIdQuery, CategoryDto?>
 {
     private readonly IUnitOfWork _unitOfWork;
@@ -49,6 +51,12 @@ public class GetCategoryByIdHandler : IRequestHandler<GetCategoryByIdQuery, Cate
     }
 }
 
+/// <summary>
+/// MediatR query handler for the top-level categories only (those with no
+/// ParentCategoryId) - what a category navigation menu/breadcrumb root
+/// would render, as opposed to <see cref="GetAllCategoriesHandler"/>'s flat
+/// list of every category regardless of nesting depth.
+/// </summary>
 public class GetRootCategoriesHandler : IRequestHandler<GetRootCategoriesQuery, IEnumerable<CategoryDto>>
 {
     private readonly IUnitOfWork _unitOfWork;
@@ -67,6 +75,12 @@ public class GetRootCategoriesHandler : IRequestHandler<GetRootCategoriesQuery, 
     }
 }
 
+/// <summary>
+/// MediatR query handler for Categories flagged active - the storefront's
+/// "categories customers can currently browse" list, distinct from
+/// <see cref="GetAllCategoriesHandler"/> which includes inactive ones too
+/// (e.g. a discontinued line an admin hasn't deleted, just hidden).
+/// </summary>
 public class GetActiveCategoriesHandler : IRequestHandler<GetActiveCategoriesQuery, IEnumerable<CategoryDto>>
 {
     private readonly IUnitOfWork _unitOfWork;
@@ -85,6 +99,13 @@ public class GetActiveCategoriesHandler : IRequestHandler<GetActiveCategoriesQue
     }
 }
 
+/// <summary>
+/// MediatR query handler for a single Category page that also needs its
+/// Products eagerly loaded (<see cref="IUnitOfWork.Categories"/>'s
+/// GetWithProductsAsync, not the plain GetByIdAsync
+/// <see cref="GetCategoryByIdHandler"/> uses) - avoids an N+1 query when a
+/// category-detail page renders both the category and its product grid.
+/// </summary>
 public class GetCategoryWithProductsHandler : IRequestHandler<GetCategoryWithProductsQuery, CategoryDto?>
 {
     private readonly IUnitOfWork _unitOfWork;
