@@ -13,22 +13,29 @@ import { Provider } from 'react-redux'; // [library] connects React to the Redux
 import { store } from './app/store'; // STEP 2 — global state
 import { BrowserRouter, Routes, Route } from 'react-router-dom'; // [library] page routing
 import ProductList from './components/ProductList.jsx'; // STEP 4 — main page component
+import ErrorBoundary from './components/ErrorBoundary.jsx';
+import NotFound from './components/NotFound.jsx';
 import './index.css';
 
 // Turn the <div id="root"> from index.html into a React render target.
 const root = ReactDOM.createRoot(document.getElementById('root'));
 
 root.render(
-  // <Provider> [component] makes the Redux `store` readable by every
-  // component nested inside it (that's how ProductList.jsx gets data later).
-  <Provider store={store}>
-    {/* <BrowserRouter> [component] enables URL-based navigation */}
-    <BrowserRouter>
-      {/* <Routes>/<Route> [components]: "when URL is X, render component Y" */}
-      <Routes>
-        <Route path="/" element={<ProductList />} />
-        {/* Add more routes as needed */}
-      </Routes>
-    </BrowserRouter>
-  </Provider>
+  // ErrorBoundary wraps everything below the Redux Provider (not inside
+  // it) so a render error can never itself be caused by a broken/missing
+  // store - the boundary's own fallback UI has no dependency on Redux.
+  <ErrorBoundary>
+    <Provider store={store}>
+      {/* <BrowserRouter> [component] enables URL-based navigation */}
+      <BrowserRouter>
+        {/* <Routes>/<Route> [components]: "when URL is X, render component Y" */}
+        <Routes>
+          <Route path="/" element={<ProductList />} />
+          {/* Add more routes as needed */}
+          {/* path="*" is React Router's catch-all - matches any URL none of the routes above matched. */}
+          <Route path="*" element={<NotFound />} />
+        </Routes>
+      </BrowserRouter>
+    </Provider>
+  </ErrorBoundary>
 );
