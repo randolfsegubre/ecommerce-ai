@@ -1,6 +1,8 @@
 # E-Commerce AI — Product & Category Management API
 
-A .NET 9 Clean Architecture e-commerce backend with AI-integration capabilities. Handles hierarchical product categories, product lifecycle management (pricing, stock, specifications, images), and a React frontend for browsing.
+A .NET 9 Clean Architecture e-commerce backend, plus a React frontend for browsing. "AI" in the name is aspirational only — there is no AI feature implemented; `Azure.AI.OpenAI` is referenced but unused.
+
+**Status (2026-09-07): dev-complete, verified end-to-end locally.** Controllers are wired through MediatR to real EF Core-backed handlers (this was previously stubbed — see "Known limitations" below for what that fix uncovered and what's still deliberately out of scope), against a real SQL Server LocalDB database with an EF Core migration and local seed data. Verified in this pass: `dotnet build` on the full solution, a live `dotnet run` with automatic migration + seeding, full CRUD through Swagger and curl (including FluentValidation returning structured 400s instead of raw 500s), and the React app rendering real backend data end-to-end in a browser via the Vite dev proxy.
 
 ---
 
@@ -28,7 +30,7 @@ A .NET 9 Clean Architecture e-commerce backend with AI-integration capabilities.
 | ORM | EF Core (SQL Server) |
 | Mediator | MediatR 12.4.1 |
 | Validation | FluentValidation 11.11.0 |
-| Mapping | AutoMapper 12.0.1 |
+| Mapping | AutoMapper 13.0.1 |
 | Frontend | React + Vite (JavaScript) |
 | State | Redux Toolkit + RTK Query |
 
@@ -73,39 +75,25 @@ git clone https://github.com/randolfsegubre/ecommerce-ai.git
 cd ecommerce-ai
 ```
 
-**2. Configure the database**
+**2. Database connection**
 
-Edit `E-Commerse.AI.API/appsettings.json`:
+Already configured for a zero-setup local run: `E-Commerse.AI.API/appsettings.json` ships a default connection string pointing at SQL Server LocalDB (`(localdb)\mssqllocaldb`, database `ECommerceAI_Dev`, Windows-integrated auth — no password, so safe to commit), which ships with Visual Studio / SQL Server Express and needs no separate install or Docker container on most dev machines. Override it in a gitignored `appsettings.Development.json` if you want a different SQL Server instance.
 
-```json
-{
-  "ConnectionStrings": {
-    "DefaultConnection": "Server=(localdb)\\mssqllocaldb;Database=ECommerceAI_Dev;Trusted_Connection=True;"
-  }
-}
-```
-
-**3. Create the database**
-
-```powershell
-dotnet ef database update \
-  --project ECommerce.AI.Infrastructure \
-  --startup-project E-Commerse.AI.API
-```
-
-**4. Restore and build**
+**3. Restore and build**
 
 ```powershell
 dotnet restore
-dotnet build
+dotnet build ECommerce.AI.sln
 ```
 
-**5. Install frontend dependencies**
+**4. Install frontend dependencies**
 
 ```powershell
 cd ECommerse.UI
 npm install
 ```
+
+There's no separate "create the database" step — `Program.cs` calls `Database.MigrateAsync()` and seeds three sample products on every startup (skipped if data already exists), so the first `dotnet run` creates and populates `ECommerceAI_Dev` automatically.
 
 ---
 
@@ -116,8 +104,7 @@ npm install
 ```powershell
 cd E-Commerse.AI.API
 dotnet run
-# API: http://localhost:5000 (or check launchSettings.json)
-# Swagger: http://localhost:5000/swagger
+# API + Swagger UI: http://localhost:5196  (also https://localhost:7104 — see launchSettings.json)
 ```
 
 **Terminal 2 — Frontend:**
@@ -128,13 +115,15 @@ npm run dev
 # Frontend: http://localhost:5173
 ```
 
+The frontend talks to the API through Vite's dev proxy (`vite.config.js` forwards `/api/*` to `http://localhost:5196`), so no CORS setup or hardcoded API URL is needed for local dev — just make sure the API is running on its default `http` launch profile port before starting the frontend.
+
 ---
 
 ## Architecture Flow
 
 ```
 Browser (React + Redux Toolkit)
-  └── RTK Query → axios
+  └── RTK Query (fetch-based) → Vite dev proxy
         └── /api/* → API
 
 ASP.NET Core API
@@ -165,3 +154,17 @@ ASP.NET Core API
 | Infrastructure (repositories, DbContext) | [ECommerce.AI.Infrastructure/GUIDE.md](ECommerce.AI.Infrastructure/GUIDE.md) |
 | API (controllers, endpoints) | [E-Commerse.AI.API/GUIDE.md](E-Commerse.AI.API/GUIDE.md) |
 | Frontend (React components, Redux store) | [ECommerse.UI/GUIDE.md](ECommerse.UI/GUIDE.md) |
+
+---
+
+## Known limitations (as of 2026-09-07)
+
+Real gaps surfaced while wiring the controllers end-to-end, kept here instead of silently fixed so the history is honest:
+
+- **Category hierarchy endpoints (subcategories, ancestor/descendant "hierarchy" view) were removed, not implemented.** They previously returned hardcoded fake data; rather than ship another fake response, they were cut. `ICategoryRepository.GetSubCategoriesAsync` exists and works — a real subcategories endpoint is a small, well-scoped addition if needed.
+- **`AutoMapper` 13.0.1 still shows a `NU1903` advisory (`GHSA-rvv3-g6hj-g44x`) on `dotnet build`/`dotnet list package --vulnerable`.** This advisory is about AutoMapper's post-12.x commercial licensing change, not an exploitable code vulnerability — there is no newer free version that clears it. Confirm current licensing terms before using this in anything commercial.
+- **No authentication/authorization.** Swagger's Bearer scheme is defined but not enforced anywhere — every endpoint is open. Needed before any real deployment.
+- **CORS is wide open in Development** (`AllowAnyOrigin/Method/Header`) and Production has no CORS policy configured at all. Needs a real allow-list before deploying.
+- **Seed images are external `picsum.photos` URLs** — fine for local demo, but a production deployment should use real product imagery (blob storage/CDN), not a third-party placeholder service.
+- **No automated tests.** Verification in this pass was manual (`dotnet build`, live `dotnet run`, curl/Swagger, and a browser check of the React app) — there is no test project yet. Worth adding before treating this as production-track rather than a portfolio piece.
+- **`ECommerse.UI/src` has unused duplicate `.ts`/`.tsx` files sitting next to the real `.jsx` ones** (`store.ts`, `productsApi.ts`, `productsSlice.ts`, `ProductCard.tsx`, `ProductList.tsx`, `Product.ts`) left over from an abandoned TypeScript migration. There's no `tsconfig.json` and nothing imports them, so they're inert, not a build risk — but worth deleting for a clean portfolio checkout.

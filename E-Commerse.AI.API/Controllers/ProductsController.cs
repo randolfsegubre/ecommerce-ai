@@ -1,6 +1,8 @@
+using MediatR;
 using Microsoft.AspNetCore.Mvc;
 using ECommerce.AI.Application.DTOs;
 using ECommerce.AI.Application.DTOs.Commands;
+using ECommerce.AI.Application.Handlers.Products;
 
 namespace ECommerce.AI.API.Controllers;
 
@@ -13,10 +15,12 @@ namespace ECommerce.AI.API.Controllers;
 [Tags("Products")]
 public class ProductsController : ControllerBase
 {
+    private readonly IMediator _mediator;
     private readonly ILogger<ProductsController> _logger;
 
-    public ProductsController(ILogger<ProductsController> logger)
+    public ProductsController(IMediator mediator, ILogger<ProductsController> logger)
     {
+        _mediator = mediator;
         _logger = logger;
     }
 
@@ -29,29 +33,8 @@ public class ProductsController : ControllerBase
     [ProducesResponseType(typeof(IEnumerable<ProductDto>), StatusCodes.Status200OK)]
     public async Task<ActionResult<IEnumerable<ProductDto>>> GetProducts()
     {
-        // TODO: Implement with MediatR handler
-        var sampleProducts = new List<ProductDto>
-        {
-            new ProductDto
-            {
-                Id = Guid.NewGuid(),
-                Name = "Sample Product 1",
-                Description = "This is a sample product for testing",
-                SKU = "SAMPLE-001",
-                Price = 99.99m,
-                StockQuantity = 50,
-                MinStockLevel = 10,
-                IsActive = true,
-                IsFeatured = false,
-                Weight = 1.5,
-                CategoryId = Guid.NewGuid(),
-                CreatedAt = DateTime.UtcNow,
-                Images = new List<ProductImageDto>(),
-                Specifications = new List<ProductSpecificationDto>()
-            }
-        };
-
-        return Ok(sampleProducts);
+        var products = await _mediator.Send(new GetAllProductsQuery());
+        return Ok(products);
     }
 
     /// <summary>
@@ -66,29 +49,8 @@ public class ProductsController : ControllerBase
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     public async Task<ActionResult<ProductDto>> GetProduct(Guid id)
     {
-        // TODO: Implement with MediatR handler
-        if (id == Guid.Empty)
-            return NotFound();
-
-        var product = new ProductDto
-        {
-            Id = id,
-            Name = "Sample Product",
-            Description = "This is a sample product for testing",
-            SKU = "SAMPLE-001",
-            Price = 99.99m,
-            StockQuantity = 50,
-            MinStockLevel = 10,
-            IsActive = true,
-            IsFeatured = false,
-            Weight = 1.5,
-            CategoryId = Guid.NewGuid(),
-            CreatedAt = DateTime.UtcNow,
-            Images = new List<ProductImageDto>(),
-            Specifications = new List<ProductSpecificationDto>()
-        };
-
-        return Ok(product);
+        var product = await _mediator.Send(new GetProductByIdQuery(id));
+        return product is null ? NotFound() : Ok(product);
     }
 
     /// <summary>
@@ -103,30 +65,7 @@ public class ProductsController : ControllerBase
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
     public async Task<ActionResult<ProductDto>> CreateProduct([FromBody] CreateProductCommand command)
     {
-        if (!ModelState.IsValid)
-            return BadRequest(ModelState);
-
-        // TODO: Implement with MediatR handler
-        var createdProduct = new ProductDto
-        {
-            Id = Guid.NewGuid(),
-            Name = command.Name,
-            Description = command.Description,
-            SKU = command.SKU,
-            Price = command.Price,
-            StockQuantity = command.StockQuantity,
-            MinStockLevel = command.MinStockLevel,
-            IsActive = true,
-            IsFeatured = false,
-            Weight = command.Weight,
-            Brand = command.Brand,
-            Model = command.Model,
-            CategoryId = command.CategoryId,
-            CreatedAt = DateTime.UtcNow,
-            Images = new List<ProductImageDto>(),
-            Specifications = new List<ProductSpecificationDto>()
-        };
-
+        var createdProduct = await _mediator.Send(new CreateProductRequest(command));
         return CreatedAtAction(nameof(GetProduct), new { id = createdProduct.Id }, createdProduct);
     }
 
@@ -143,35 +82,9 @@ public class ProductsController : ControllerBase
     [ProducesResponseType(typeof(ProductDto), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
-    public async Task<ActionResult<ProductDto>> UpdateProduct(Guid id, [FromBody] UpdateProductCommand command)
+    public async Task<ActionResult<ProductDto>> UpdateProduct(Guid id, [FromBody] CreateProductCommand command)
     {
-        if (!ModelState.IsValid)
-            return BadRequest(ModelState);
-
-        if (id == Guid.Empty)
-            return NotFound();
-
-        // TODO: Implement with MediatR handler
-        var updatedProduct = new ProductDto
-        {
-            Id = id,
-            Name = command.Name,
-            Description = command.Description,
-            Price = command.Price,
-            StockQuantity = command.StockQuantity,
-            MinStockLevel = command.MinStockLevel,
-            IsActive = command.IsActive,
-            IsFeatured = command.IsFeatured,
-            Weight = command.Weight,
-            Brand = command.Brand,
-            Model = command.Model,
-            CategoryId = command.CategoryId,
-            UpdatedAt = DateTime.UtcNow,
-            CreatedAt = DateTime.UtcNow.AddDays(-30),
-            Images = new List<ProductImageDto>(),
-            Specifications = new List<ProductSpecificationDto>()
-        };
-
+        var updatedProduct = await _mediator.Send(new UpdateProductRequest(id, command));
         return Ok(updatedProduct);
     }
 
@@ -187,11 +100,8 @@ public class ProductsController : ControllerBase
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     public async Task<ActionResult> DeleteProduct(Guid id)
     {
-        if (id == Guid.Empty)
-            return NotFound();
-
-        // TODO: Implement with MediatR handler
-        return NoContent();
+        var deleted = await _mediator.Send(new DeleteProductRequest(id));
+        return deleted ? NoContent() : NotFound();
     }
 
     /// <summary>
@@ -204,8 +114,7 @@ public class ProductsController : ControllerBase
     [ProducesResponseType(typeof(IEnumerable<ProductDto>), StatusCodes.Status200OK)]
     public async Task<ActionResult<IEnumerable<ProductDto>>> GetProductsByCategory(Guid categoryId)
     {
-        // TODO: Implement with MediatR handler
-        var products = new List<ProductDto>();
+        var products = await _mediator.Send(new GetProductsByCategoryQuery(categoryId));
         return Ok(products);
     }
 
@@ -219,8 +128,7 @@ public class ProductsController : ControllerBase
     [ProducesResponseType(typeof(IEnumerable<ProductDto>), StatusCodes.Status200OK)]
     public async Task<ActionResult<IEnumerable<ProductDto>>> SearchProducts([FromQuery] string searchTerm)
     {
-        // TODO: Implement with MediatR handler
-        var products = new List<ProductDto>();
+        var products = await _mediator.Send(new SearchProductsQuery(searchTerm));
         return Ok(products);
     }
 
@@ -233,8 +141,7 @@ public class ProductsController : ControllerBase
     [ProducesResponseType(typeof(IEnumerable<ProductDto>), StatusCodes.Status200OK)]
     public async Task<ActionResult<IEnumerable<ProductDto>>> GetFeaturedProducts()
     {
-        // TODO: Implement with MediatR handler
-        var products = new List<ProductDto>();
+        var products = await _mediator.Send(new GetFeaturedProductsQuery());
         return Ok(products);
     }
 
@@ -247,69 +154,7 @@ public class ProductsController : ControllerBase
     [ProducesResponseType(typeof(IEnumerable<ProductDto>), StatusCodes.Status200OK)]
     public async Task<ActionResult<IEnumerable<ProductDto>>> GetLowStockProducts()
     {
-        // TODO: Implement with MediatR handler
-        var products = new List<ProductDto>();
+        var products = await _mediator.Send(new GetLowStockProductsQuery());
         return Ok(products);
     }
-}
-
-/// <summary>
-/// Update product command for PUT operations
-/// </summary>
-public class UpdateProductCommand
-{
-    /// <summary>
-    /// Product name
-    /// </summary>
-    public string Name { get; set; } = string.Empty;
-
-    /// <summary>
-    /// Product description
-    /// </summary>
-    public string Description { get; set; } = string.Empty;
-
-    /// <summary>
-    /// Product price
-    /// </summary>
-    public decimal Price { get; set; }
-
-    /// <summary>
-    /// Stock quantity
-    /// </summary>
-    public int StockQuantity { get; set; }
-
-    /// <summary>
-    /// Minimum stock level
-    /// </summary>
-    public int MinStockLevel { get; set; }
-
-    /// <summary>
-    /// Whether the product is active
-    /// </summary>
-    public bool IsActive { get; set; } = true;
-
-    /// <summary>
-    /// Whether the product is featured
-    /// </summary>
-    public bool IsFeatured { get; set; } = false;
-
-    /// <summary>
-    /// Product weight
-    /// </summary>
-    public double Weight { get; set; }
-
-    /// <summary>
-    /// Product brand
-    /// </summary>
-    public string? Brand { get; set; }
-
-    /// <summary>
-    /// Product model
-    /// </summary>
-    public string? Model { get; set; }
-
-    /// <summary>
-    /// Category ID
-    /// </summary>
-    public Guid CategoryId { get; set; }
 }
