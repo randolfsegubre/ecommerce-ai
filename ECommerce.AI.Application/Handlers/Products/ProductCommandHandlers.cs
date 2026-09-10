@@ -9,12 +9,20 @@ using MediatR;
 
 namespace ECommerce.AI.Application.Handlers.Products;
 
-// MediatR Commands - using different names to avoid conflicts
+// MediatR requests (the "command" side of CQRS) - one record per write
+// operation. MediatR dispatches each to the single handler below that
+// implements IRequestHandler<TRequest, TResponse> for it; controllers never
+// call these handlers directly, they just send the request via IMediator.
 public record CreateProductRequest(DTOs.Commands.CreateProductCommand Command) : IRequest<ProductDto>;
 public record UpdateProductRequest(Guid Id, DTOs.Commands.CreateProductCommand Command) : IRequest<ProductDto>;
 public record DeleteProductRequest(Guid Id) : IRequest<bool>;
 
-// Command Handlers
+/// <summary>
+/// MediatR command handler for creating a new Product. Owns every rule that
+/// must hold before a product can exist: the request shape (FluentValidation),
+/// its category being real, and its SKU being unique - none of that lives in
+/// the controller, which only sends the request.
+/// </summary>
 public class CreateProductHandler : IRequestHandler<CreateProductRequest, ProductDto>
 {
     private readonly IUnitOfWork _unitOfWork;
@@ -30,25 +38,29 @@ public class CreateProductHandler : IRequestHandler<CreateProductRequest, Produc
 
     public async Task<ProductDto> Handle(CreateProductRequest request, CancellationToken cancellationToken)
     {
+        // STEP 1 of 6 - reject a malformed command before touching the database at all.
         await _validator.ValidateAndThrowAsync(request.Command, cancellationToken);
 
-        // Check if category exists
+        // STEP 2 of 6 - a Product must belong to a real Category.
         var categoryExists = await _unitOfWork.Categories.AnyAsync(c => c.Id == request.Command.CategoryId, cancellationToken);
         if (!categoryExists)
             throw new ArgumentException($"Category with ID {request.Command.CategoryId} does not exist.");
 
-        // Check if SKU already exists
+        // STEP 3 of 6 - SKU is the business-level unique identifier for a
+        // Product (separate from its database Id), so it needs its own check.
         var existingProduct = await _unitOfWork.Products.GetBySkuAsync(request.Command.SKU, cancellationToken);
         if (existingProduct != null)
             throw new ArgumentException($"Product with SKU {request.Command.SKU} already exists.");
 
-        // Create product with value objects
+        // STEP 4 of 6 - build the domain value objects (SKU/Money/Weight/
+        // Dimensions) up front, so the Product constructor only ever receives
+        // already-valid values, never raw primitives it would have to re-validate.
         var sku = new ProductSKU(request.Command.SKU);
         var price = new Money(request.Command.Price);
         var comparePrice = request.Command.ComparePrice.HasValue ? new Money(request.Command.ComparePrice.Value) : null;
         var weight = new ProductWeight(request.Command.Weight);
-        var dimensions = !string.IsNullOrWhiteSpace(request.Command.Dimensions) 
-            ? ProductDimensions.FromString(request.Command.Dimensions) 
+        var dimensions = !string.IsNullOrWhiteSpace(request.Command.Dimensions)
+            ? ProductDimensions.FromString(request.Command.Dimensions)
             : null;
 
         var product = new Product(
@@ -65,21 +77,25 @@ public class CreateProductHandler : IRequestHandler<CreateProductRequest, Produc
             request.Command.Brand,
             request.Command.Model
         );
-        
-        // Add images to the product's collection
+
+        // STEP 5 of 6 - attach images/specifications to the in-memory
+        // aggregate before it's ever saved, so the whole Product (with its
+        // child collections) is inserted as one consistent unit.
         foreach (var imageCommand in request.Command.Images)
         {
             var image = new ProductImage(imageCommand.ImageUrl, product.Id, imageCommand.AltText, imageCommand.SortOrder, imageCommand.IsPrimary);
             product.Images.Add(image);
         }
 
-        // Add specifications to the product's collection
         foreach (var specCommand in request.Command.Specifications)
         {
             var specification = new ProductSpecification(specCommand.Name, specCommand.Value, product.Id, specCommand.SortOrder);
             product.Specifications.Add(specification);
         }
 
+        // STEP 6 of 6 - persist, then re-read from the database rather than
+        // mapping the in-memory `product` directly, so the returned DTO
+        // reflects exactly what got stored (defaults, computed columns, etc.).
         await _unitOfWork.Products.AddAsync(product, cancellationToken);
         await _unitOfWork.SaveChangesAsync(cancellationToken);
 
@@ -88,6 +104,14 @@ public class CreateProductHandler : IRequestHandler<CreateProductRequest, Produc
     }
 }
 
+/// <summary>
+/// MediatR command handler for updating an existing Product. Re-runs the
+/// same category/SKU checks CreateProductHandler does (an update can change
+/// both), then applies changes through the Product entity's own DDD methods
+/// (UpdateBasicInfo/SetPrice/etc.) rather than setting properties directly -
+/// keeps any future invariant enforcement inside the entity, not scattered
+/// across every caller that happens to update a Product.
+/// </summary>
 public class UpdateProductHandler : IRequestHandler<UpdateProductRequest, ProductDto>
 {
     private readonly IUnitOfWork _unitOfWork;
@@ -103,32 +127,39 @@ public class UpdateProductHandler : IRequestHandler<UpdateProductRequest, Produc
 
     public async Task<ProductDto> Handle(UpdateProductRequest request, CancellationToken cancellationToken)
     {
+        // STEP 1 of 5 - validate the incoming command shape, then confirm the
+        // target Product actually exists before checking anything else about it.
         await _validator.ValidateAndThrowAsync(request.Command, cancellationToken);
 
         var product = await _unitOfWork.Products.GetByIdAsync(request.Id, cancellationToken);
         if (product == null)
             throw new ArgumentException($"Product with ID {request.Id} does not exist.");
 
-        // Check if category exists
+        // STEP 2 of 5 - same category-exists rule as create.
         var categoryExists = await _unitOfWork.Categories.AnyAsync(c => c.Id == request.Command.CategoryId, cancellationToken);
         if (!categoryExists)
             throw new ArgumentException($"Category with ID {request.Command.CategoryId} does not exist.");
 
-        // Check if SKU already exists (excluding current product)
+        // STEP 3 of 5 - same SKU-uniqueness rule as create, but excluding this
+        // Product's own current row (an update that doesn't change the SKU
+        // must not reject itself as "already exists").
         var existingProduct = await _unitOfWork.Products.GetBySkuAsync(request.Command.SKU, cancellationToken);
         if (existingProduct != null && existingProduct.Id != request.Id)
             throw new ArgumentException($"Product with SKU {request.Command.SKU} already exists.");
 
-        // Create value objects
+        // STEP 4 of 5 - rebuild the value objects from the incoming command,
+        // same reasoning as CreateProductHandler's STEP 4.
         var newSku = new ProductSKU(request.Command.SKU);
         var price = new Money(request.Command.Price);
         var comparePrice = request.Command.ComparePrice.HasValue ? new Money(request.Command.ComparePrice.Value) : null;
         var weight = new ProductWeight(request.Command.Weight);
-        var dimensions = !string.IsNullOrWhiteSpace(request.Command.Dimensions) 
-            ? ProductDimensions.FromString(request.Command.Dimensions) 
+        var dimensions = !string.IsNullOrWhiteSpace(request.Command.Dimensions)
+            ? ProductDimensions.FromString(request.Command.Dimensions)
             : null;
 
-        // Update product properties using DDD methods
+        // STEP 5 of 5 - apply every change through the entity's own methods
+        // (not `product.Name = ...`), persist, then re-read and map, same
+        // "return what was actually stored" reasoning as create.
         product.UpdateBasicInfo(request.Command.Name, request.Command.Description, request.Command.Brand, request.Command.Model);
         product.UpdateSKU(newSku);
         product.SetPrice(price, comparePrice);
@@ -144,6 +175,12 @@ public class UpdateProductHandler : IRequestHandler<UpdateProductRequest, Produc
     }
 }
 
+/// <summary>
+/// MediatR command handler for deleting a Product. Deliberately the simplest
+/// of the three handlers - no validator, no category/SKU rules apply to a
+/// delete - so it stays a plain "find it, remove it, report whether there
+/// was anything to remove" operation rather than growing rules it doesn't need.
+/// </summary>
 public class DeleteProductHandler : IRequestHandler<DeleteProductRequest, bool>
 {
     private readonly IUnitOfWork _unitOfWork;
