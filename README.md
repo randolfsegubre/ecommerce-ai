@@ -2,7 +2,13 @@
 
 A .NET 9 Clean Architecture e-commerce backend, plus a React frontend for browsing. "AI" in the name is aspirational only — there is no AI feature implemented; `Azure.AI.OpenAI` is referenced but unused.
 
-**Status (2026-09-07): dev-complete, verified end-to-end locally.** Controllers are wired through MediatR to real EF Core-backed handlers (this was previously stubbed — see "Known limitations" below for what that fix uncovered and what's still deliberately out of scope), against a real SQL Server LocalDB database with an EF Core migration and local seed data. Verified in this pass: `dotnet build` on the full solution, a live `dotnet run` with automatic migration + seeding, full CRUD through Swagger and curl (including FluentValidation returning structured 400s instead of raw 500s), and the React app rendering real backend data end-to-end in a browser via the Vite dev proxy.
+**Status (2026-09-12): dev-complete, verified end-to-end locally.** Controllers are wired through MediatR to real EF Core-backed handlers (this was previously stubbed — see "Known limitations" below for what that fix uncovered and what's still deliberately out of scope), against a real SQL Server LocalDB database with an EF Core migration and local seed data. Verified in this pass: `dotnet build` on the full solution, a live `dotnet run` with automatic migration + seeding, full CRUD through Swagger and curl (including FluentValidation returning structured 400s instead of raw 500s), and the React app rendering real backend data end-to-end in a browser via the Vite dev proxy.
+
+## E2E testing
+
+- **Product listing renders real backend data live in the browser** — verified via the Vite dev proxy against the running API, not mocked. Screenshot: [`docs/e2e/ecommerce-ai-products.png`](docs/e2e/ecommerce-ai-products.png) (4 real seeded products with real prices, captured from an actual running session, not a mockup).
+- **Error boundary + 404 page**, added 2026-09-10 — `ErrorBoundary.jsx` (class component, catches render errors) wraps the app outside the Redux `<Provider>`; `NotFound.jsx` handles unmatched routes via a catch-all `<Route path="*">`. Verified live with a deliberate throwing test component (`QaTestThrow`, removed before commit): the boundary caught the error, showed the fallback UI, and clicking "Back to Home" did a hard `window.location.href` reload back to a working, still-functional app — not a soft re-render that would hit the same broken state again.
+- **Not covered**: no automated test project exists yet (see "Known limitations" below) — all verification above is manual/live, not a CI-enforced suite.
 
 ---
 
